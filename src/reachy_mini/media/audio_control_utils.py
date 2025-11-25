@@ -21,6 +21,7 @@ https://www.xmos.com/documentation/XM-014888-PC/html/modules/fwk_xvf/doc/user_gu
 
 import argparse
 import logging
+import platform
 import struct
 import sys
 import time
@@ -177,6 +178,26 @@ class ReSpeaker:
     def __init__(self, dev: usb.core.Device) -> None:
         """Initialize the ReSpeaker interface with the given USB device."""
         self.dev = dev
+        
+        # Set configuration
+        try:
+            self.dev.set_configuration()
+        except usb.core.USBError:
+            pass  # Already configured
+        
+        # Handle kernel driver (Linux only)
+        if platform.system() == 'Linux':
+            try:
+                if self.dev.is_kernel_driver_active(3):
+                    self.dev.detach_kernel_driver(3)
+            except (NotImplementedError, usb.core.USBError):
+                pass  # Kernel driver handling not needed or failed
+        
+        # Claim the vendor control interface (interface 3)
+        try:
+            usb.util.claim_interface(self.dev, 3)
+        except usb.core.USBError:
+            pass  # May already be claimed
 
     def write(self, name: str, data_list: Any) -> None:
         """Write data to a specified parameter on the ReSpeaker device."""
@@ -321,7 +342,7 @@ class ReSpeaker:
 
 def find(vid: int = 0x2886, pid: int = 0x001A) -> ReSpeaker | None:
     """Find and return the ReSpeaker USB device with the given Vendor ID and Product ID."""
-    dev = usb.core.find(idVendor=vid, idProduct=pid)
+    dev = usb.core.find(idVendor=vid, idProduct=pid, backend=get_libusb1_backend())
     if not dev:
         return None
 
@@ -338,11 +359,11 @@ def init_respeaker_usb() -> Optional[ReSpeaker]:
             dev = usb.core.find(
                 idVendor=0x2886, idProduct=0x001A, backend=get_libusb1_backend()
             )
-            if dev is None:
-                logging.error("No ReSpeaker USB device found !")
-                return None 
-            else:
-                logging.warning("Old firmware detected on ReSpeaker USB device. Please update the firmware!")
+            logging.warning("Old firmware detected. Please update the firmware!")
+        
+        if dev is None:
+            return None
+            
         return ReSpeaker(dev)
     except usb.core.NoBackendError:
         logging.error(
