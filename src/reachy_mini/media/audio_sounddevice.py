@@ -34,8 +34,8 @@ class SoundDeviceAudio(AudioBase):
         self._buffer: List[npt.NDArray[np.float32]] = []
 
         # Device ids
-        self._output_device_id = self.get_output_device_id("respeaker")
-        self._input_device_id = self.get_input_device_id("respeaker")
+        self._output_device_id = self.get_output_device_id("Reachy Mini Audio")
+        self._input_device_id = self.get_input_device_id("Reachy Mini Audio")
 
         # Streaming state (replaces queue/accumulation approach)
         self._streaming_active = False
