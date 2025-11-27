@@ -62,9 +62,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid: 
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_1:
       id: 11
       offset: 1024
@@ -73,9 +73,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_2:
       id: 12
       offset: -1024
@@ -84,9 +84,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_3:
       id: 13
       offset: 1024
@@ -95,9 +95,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_4:
       id: 14
       offset: -1024
@@ -106,9 +106,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_5:
       id: 15
       offset: 1024
@@ -117,9 +117,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - stewart_6:
       id: 16
       offset: -1024
@@ -128,9 +128,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 0
+        - 20
   - right_antenna:
       id: 17
       offset: 0
@@ -139,9 +139,9 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 400
+        - 20
   - left_antenna:
       id: 18
       offset: 0
@@ -150,6 +150,6 @@ motors:
       return_delay_time: 0
       shutdown_error: 52
       pid:
-        - 400
+        - 180
         - 0
-        - 400
+        - 20
