@@ -1,6 +1,12 @@
 """Utilities for managing the Reachy Mini daemon."""
 
-import fcntl
+import sys
+
+if sys.platform != 'win32':
+    import fcntl
+else:
+    fcntl = None  # Mock for Windows
+    
 import os
 import socket
 import struct
@@ -89,6 +95,10 @@ def find_serial_port(
 
 def get_ip_address(ifname: str = "wlan0") -> str | None:
     """Get the IP address of a specific network interface (Linux Only)."""
+    if sys.platform == 'win32' or fcntl is None:
+        print("get_ip_address is not supported on Windows.")
+        return None
+        
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         return socket.inet_ntoa(
