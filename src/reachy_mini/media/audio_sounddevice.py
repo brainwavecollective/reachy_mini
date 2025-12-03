@@ -60,7 +60,19 @@ class SoundDeviceAudio(AudioBase):
         if status:
             self.logger.warning(f"SoundDevice status: {status}")
 
-        self._buffer.append(indata.copy())
+        data = indata.copy()
+
+        if data.ndim == 2:
+            channels = data.shape[1]
+            if channels > 4:
+                data = data[:, :2]
+        elif data.ndim == 1:
+            pass 
+        else:
+            self.logger.error(f"Unexpected audio data shape: {data.shape}")
+            return 
+
+        self._buffer.append(data)
 
     def get_audio_sample(self) -> Optional[npt.NDArray[np.float32]]:
         """Read audio data from the buffer. Returns numpy array or None if empty."""
