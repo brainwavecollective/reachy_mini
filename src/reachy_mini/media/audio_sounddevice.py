@@ -43,7 +43,7 @@ class SoundDeviceAudio(AudioBase):
         self._queued_samples: int = 0
         self._tail: Optional[npt.NDArray[np.float32]] = None
         self._target_buffer_ms: int = 80
-        self._max_queue_seconds: float = 5.0
+        self._max_queue_seconds: float = 3.0  # Reduced from 5.0 for better responsiveness
         self._underflows: int = 0
         self._lock = threading.Lock()
 
@@ -113,16 +113,26 @@ class SoundDeviceAudio(AudioBase):
             data = np.mean(data, axis=1)
         data = np.asarray(data, dtype=np.float32, order="C")
 
-        # Prevent unbounded queue growth
+        # Prevent unbounded queue growth - only drop if truly over capacity
         with self._lock:
             max_samples = int(self.SAMPLE_RATE * self._max_queue_seconds)
-            if self._queued_samples + data.shape[0] > max_samples:
-                while self._queued_samples + data.shape[0] > max_samples and self._chunk_fifo:
+            
+            # Only drop chunks if we're significantly over capacity
+            # This prevents premature dropping that causes the overflow warnings
+            if self._queued_samples > max_samples:
+                dropped_count = 0
+                target_after_drop = int(max_samples * 0.5)  # Drop to 50% capacity
+                
+                while self._queued_samples > target_after_drop and self._chunk_fifo:
                     dropped = self._chunk_fifo.popleft()
                     self._queued_samples -= dropped.shape[0]
-                self.logger.warning(
-                    f"Audio queue overflow ({self._queued_samples} samples), dropped old chunks"
-                )
+                    dropped_count += dropped.shape[0]
+                
+                if dropped_count > 0:
+                    self.logger.warning(
+                        f"Audio queue overflow ({self._queued_samples + dropped_count} samples), "
+                        f"dropped {dropped_count} samples to {self._queued_samples} samples"
+                    )
 
             self._chunk_fifo.append(data)
             self._queued_samples += data.shape[0]
@@ -150,7 +160,7 @@ class SoundDeviceAudio(AudioBase):
         target = self._target_buffer_samples()
         written = 0
 
-        # Drain carryover tail first
+        # Drain carryover tail first (no lock needed, only accessed in callback)
         if self._tail is not None and self._tail.size:
             take = min(frames, self._tail.size)
             out[:take] = self._tail[:take]
@@ -160,25 +170,31 @@ class SoundDeviceAudio(AudioBase):
             else:
                 self._tail = None
 
-        # Drain FIFO chunks
+        # Drain FIFO chunks - minimal lock time
         while written < frames:
+            chunk = None
+            
             with self._lock:
+                # Quick check: do we have enough buffered data?
                 if self._queued_samples < target:
                     break
                 if not self._chunk_fifo:
                     break
 
+                # Pop the chunk while holding the lock
                 chunk = self._chunk_fifo.popleft()
                 self._queued_samples -= chunk.shape[0]
-
-            need = frames - written
-            if chunk.shape[0] <= need:
-                out[written : written + chunk.shape[0]] = chunk
-                written += chunk.shape[0]
-            else:
-                out[written:frames] = chunk[:need]
-                self._tail = chunk[need:]
-                written = frames
+            
+            # Process chunk outside the lock
+            if chunk is not None:
+                need = frames - written
+                if chunk.shape[0] <= need:
+                    out[written : written + chunk.shape[0]] = chunk
+                    written += chunk.shape[0]
+                else:
+                    out[written:frames] = chunk[:need]
+                    self._tail = chunk[need:]
+                    written = frames
 
     def start_playing(self) -> None:
         """Open the audio output stream."""
