@@ -29,10 +29,13 @@ def main(backend: str) -> None:
     with ReachyMini(log_level="DEBUG", media_backend=backend) as mini:
         data, samplerate_in = sf.read(INPUT_FILE, dtype="float32")
 
-        if samplerate_in != mini.media.get_audio_samplerate():
+        if samplerate_in != mini.media.get_output_audio_samplerate():
             data = scipy.signal.resample(
                 data,
-                int(len(data) * (mini.media.get_audio_samplerate() / samplerate_in)),
+                int(
+                    len(data)
+                    * (mini.media.get_output_audio_samplerate() / samplerate_in)
+                ),
             )
         if data.ndim > 1:  # convert to mono
             data = np.mean(data, axis=1)
@@ -57,7 +60,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["default", "gstreamer"],
+        choices=["default", "gstreamer", "webrtc"],
         default="default",
         help="Media backend to use.",
     )

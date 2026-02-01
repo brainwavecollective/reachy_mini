@@ -1,81 +1,244 @@
 """Base classes for audio implementations.
 
 The audio implementations support various backends and provide a unified
-interface for audio input/output.
+interface for audio input/output. This module defines the abstract base class
+that all audio implementations should inherit from, ensuring consistent
+API across different audio backends.
+
+Available backends include:
+- SoundDevice: Cross-platform audio backend using sounddevice library
+- GStreamer: GStreamer-based audio backend for advanced audio processing
+- WebRTC: WebRTC-based audio for real-time communication
+
 """
 
 import logging
-import struct
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
-import usb
-from libusb_package import get_libusb1_backend
 
-
-class AudioBackend(Enum):
-    """Audio backends."""
-
-    SOUNDDEVICE = "sounddevice"
-    GSTREAMER = "gstreamer"
+from reachy_mini.media.audio_control_utils import ReSpeaker, init_respeaker_usb
 
 
 class AudioBase(ABC):
-    """Abstract class for opening and managing audio devices."""
+    """Abstract class for opening and managing audio devices.
+
+    This class defines the interface that all audio implementations must follow.
+    It provides common audio parameters and methods for managing audio devices,
+    including microphone input and speaker output functionality.
+
+    Attributes:
+        SAMPLE_RATE (int): Default sample rate for audio operations (16000 Hz).
+        CHANNELS (int): Default number of audio channels (2 for stereo).
+        logger (logging.Logger): Logger instance for audio-related messages.
+        _respeaker (Optional[ReSpeaker]): ReSpeaker microphone array device handler.
+
+    """
 
     SAMPLE_RATE = 16000  # respeaker samplerate
-    TIMEOUT = 100000
-    PARAMETERS = {
-        "VERSION": (48, 0, 4, "ro", "uint8"),
-        "AEC_AZIMUTH_VALUES": (33, 75, 16 + 1, "ro", "radians"),
-        "DOA_VALUE": (20, 18, 4 + 1, "ro", "uint16"),
-        "DOA_VALUE_RADIANS": (20, 19, 8 + 1, "ro", "radians"),
-    }
+    CHANNELS = 2  # respeaker channels
 
-    def __init__(self, backend: AudioBackend, log_level: str = "INFO") -> None:
-        """Initialize the audio device."""
+    def __init__(self, log_level: str = "INFO") -> None:
+        """Initialize the audio device.
+
+        Args:
+            log_level (str): Logging level for audio operations.
+                          Options: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'.
+                          Default: 'INFO'.
+
+        Note:
+            This constructor initializes the logging system and attempts to detect
+            and initialize the ReSpeaker microphone array if available.
+
+        """
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(log_level)
-        self.backend = backend
-        self._respeaker = self._init_respeaker_usb()
-        # name, resid, cmdid, length, type
+        self._respeaker: Optional[ReSpeaker] = init_respeaker_usb()
 
     def __del__(self) -> None:
         """Destructor to ensure resources are released."""
         if self._respeaker:
-            usb.util.dispose_resources(self._respeaker)
+            self._respeaker.close()
 
     @abstractmethod
     def start_recording(self) -> None:
-        """Start recording audio."""
+        """Start recording audio.
+
+        This method should initialize the audio recording system and prepare
+        it to capture audio data. After calling this method, get_audio_sample()
+        should be able to retrieve recorded audio data.
+
+        Note:
+            Implementations should handle any necessary resource allocation and
+            error checking. If recording cannot be started, implementations should
+            log appropriate error messages.
+
+        Raises:
+            RuntimeError: If audio recording cannot be started due to hardware
+                        or configuration issues.
+
+        """
         pass
 
     @abstractmethod
     def get_audio_sample(self) -> Optional[npt.NDArray[np.float32]]:
-        """Read audio data from the device. Returns the data or None if error."""
+        """Read audio data from the device. Returns the data or None if error.
+
+        Returns:
+            Optional[npt.NDArray[np.float32]]: A numpy array containing audio samples
+            in float32 format, or None if no data is available or an error occurred.
+
+            The array shape is typically (num_samples,) for mono or
+            (num_samples, num_channels) for multi-channel audio.
+
+        Note:
+            This method should be called after start_recording() has been called.
+            The sample rate and number of channels can be obtained via
+            get_input_audio_samplerate() and get_input_channels() respectively.
+
+        Example:
+            ```python
+            audio.start_recording()
+            samples = audio.get_audio_sample()
+            if samples is not None:
+                print(f"Got {len(samples)} audio samples")
+            ```
+
+        """
         pass
+
+    def get_input_audio_samplerate(self) -> int:
+        """Get the input samplerate of the audio device.
+
+        Returns:
+            int: The sample rate in Hz at which audio is being captured.
+                Default is 16000 Hz.
+
+        Note:
+            This value represents the number of audio samples captured per second
+            for each channel.
+
+        """
+        return self.SAMPLE_RATE
+
+    def get_output_audio_samplerate(self) -> int:
+        """Get the output samplerate of the audio device.
+
+        Returns:
+            int: The sample rate in Hz at which audio is being played back.
+                Default is 16000 Hz.
+
+        Note:
+            This value represents the number of audio samples played per second
+            for each channel.
+
+        """
+        return self.SAMPLE_RATE
+
+    def get_input_channels(self) -> int:
+        """Get the number of input channels of the audio device.
+
+        Returns:
+            int: The number of audio input channels (e.g., 1 for mono, 2 for stereo).
+                Default is 2 channels.
+
+        Note:
+            For the ReSpeaker microphone array, this typically returns 2 channels
+            representing the stereo microphone configuration.
+
+        """
+        return self.CHANNELS
+
+    def get_output_channels(self) -> int:
+        """Get the number of output channels of the audio device.
+
+        Returns:
+            int: The number of audio output channels (e.g., 1 for mono, 2 for stereo).
+                Default is 2 channels.
+
+        Note:
+            This determines how audio data should be formatted when passed to
+            push_audio_sample() method.
+
+        """
+        return self.CHANNELS
 
     @abstractmethod
     def stop_recording(self) -> None:
-        """Close the audio device and release resources."""
+        """Close the audio device and release resources.
+
+        This method should stop any ongoing audio recording and release
+        all associated resources. After calling this method, get_audio_sample()
+        should return None until start_recording() is called again.
+
+        Note:
+            Implementations should ensure proper cleanup to prevent resource leaks.
+
+        """
         pass
 
     @abstractmethod
     def start_playing(self) -> None:
-        """Start playing audio."""
+        """Start playing audio.
+
+        This method should initialize the audio playback system and prepare
+        it to receive audio data via push_audio_sample().
+
+        Note:
+            Implementations should handle any necessary resource allocation and
+            error checking. If playback cannot be started, implementations should
+            log appropriate error messages.
+
+        Raises:
+            RuntimeError: If audio playback cannot be started due to hardware
+                        or configuration issues.
+
+        """
+        pass
+
+    @abstractmethod
+    def set_max_output_buffers(self, max_buffers: int) -> None:
+        """Set the maximum number of output buffers to queue in the player.
+
+        Args:
+            max_buffers (int): Maximum number of buffers to queue.
+
+        """
         pass
 
     @abstractmethod
     def push_audio_sample(self, data: npt.NDArray[np.float32]) -> None:
-        """Push audio data to the output device."""
+        """Push audio data to the output device.
+
+        Args:
+            data (npt.NDArray[np.float32]): Audio samples to be played.
+                The array should contain float32 values typically in the range [-1.0, 1.0].
+
+                For mono audio: shape should be (num_samples,)
+                For stereo audio: shape should be (num_samples, 2)
+
+        Note:
+            This method should be called after start_playing() has been called.
+            The audio data will be played at the sample rate returned by
+            get_output_audio_samplerate().
+
+        """
         pass
 
     @abstractmethod
     def stop_playing(self) -> None:
-        """Stop playing audio and release resources."""
+        """Stop playing audio and release resources.
+
+        This method should stop any ongoing audio playback and release
+        all associated resources. After calling this method, push_audio_sample()
+        calls will have no effect until start_playing() is called again.
+
+        Note:
+            Implementations should ensure proper cleanup to prevent resource leaks.
+
+        """
         pass
 
     @abstractmethod
@@ -84,80 +247,41 @@ class AudioBase(ABC):
 
         Args:
             sound_file (str): Path to the sound file to play.
+                Supported formats depend on the specific implementation.
+
+        Note:
+            This is a convenience method that handles the complete playback
+            of a sound file from start to finish. For more control over
+            audio playback, use start_playing(), push_audio_sample(),
+            and stop_playing() methods.
+
+        Example:
+            ```python
+            audio.play_sound("/path/to/sound.wav")
+            ```
 
         """
         pass
 
-    def _init_respeaker_usb(self) -> Optional[usb.core.Device]:
-        try:
-            dev = usb.core.find(
-                idVendor=0x2886, idProduct=0x001A, backend=get_libusb1_backend()
-            )
-            return dev
-        except usb.core.NoBackendError:
-            self.logger.error(
-                "No USB backend was found ! Make sure libusb_package is correctly installed with `pip install libusb_package`."
-            )
-            return None
-
-    def _read_usb(self, name: str) -> Optional[List[int] | List[float]]:
-        try:
-            data = self.PARAMETERS[name]
-        except KeyError:
-            self.logger.error(f"Unknown parameter: {name}")
-            return None
-
-        if not self._respeaker:
-            self.logger.warning("ReSpeaker device not found.")
-            return None
-
-        resid = data[0]
-        cmdid = 0x80 | data[1]
-        length = data[2]
-
-        response = self._respeaker.ctrl_transfer(
-            usb.util.CTRL_IN
-            | usb.util.CTRL_TYPE_VENDOR
-            | usb.util.CTRL_RECIPIENT_DEVICE,
-            0,
-            cmdid,
-            resid,
-            length,
-            self.TIMEOUT,
-        )
-
-        self.logger.debug(f"Response for {name}: {response}")
-
-        result: Optional[List[float] | List[int]] = None
-        if data[4] == "uint8":
-            result = response.tolist()
-        elif data[4] == "radians":
-            byte_data = response.tobytes()
-            num_values = (data[2] - 1) / 4
-            match_str = "<"
-            for i in range(int(num_values)):
-                match_str += "f"
-            result = [
-                float(x) for x in struct.unpack(match_str, byte_data[1 : data[2]])
-            ]
-        elif data[4] == "uint16":
-            result = response.tolist()
-
-        return result
-
     def get_DoA(self) -> tuple[float, bool] | None:
         """Get the Direction of Arrival (DoA) value from the ReSpeaker device.
 
-        0° is left, 90° is front/back, 180° is right
+        The spatial angle is given in radians:
+        0 radians is left, π/2 radians is front/back, π radians is right.
+
+        Note: The microphone array requires firmware version 2.1.0 or higher to support this feature.
+        The firmware is located in src/reachy_mini/assets/firmware/*.bin.
+        Refer to https://wiki.seeedstudio.com/respeaker_xvf3800_introduction/#update-firmware for the upgrade process.
 
         Returns:
-            tuple: A tuple containing the DoA value as an integer and the speech detection, or None if the device is not found.
+            tuple: A tuple containing the DoA value as a float (radians) and the speech detection as a bool, or None if the device is not found.
 
         """
         if not self._respeaker:
             self.logger.warning("ReSpeaker device not found.")
             return None
-        result = self._read_usb("DOA_VALUE_RADIANS")
+
+        result = self._respeaker.read("DOA_VALUE_RADIANS")
         if result is None:
             return None
         return float(result[0]), bool(result[1])

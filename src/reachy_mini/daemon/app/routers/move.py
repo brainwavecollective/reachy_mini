@@ -47,6 +47,7 @@ class GotoModelRequest(BaseModel):
 
     head_pose: AnyPose | None = None
     antennas: tuple[float, float] | None = None
+    body_yaw: float | None = None
     duration: float
     interpolation: InterpolationMode = InterpolationMode.MINJERK
 
@@ -63,6 +64,7 @@ class GotoModelRequest(BaseModel):
                         "yaw": 0.0,
                     },
                     "antennas": [0.0, 0.0],
+                    "body_yaw": 0.0,
                     "duration": 2.0,
                     "interpolation": "minjerk",
                 },
@@ -152,6 +154,7 @@ async def goto(
         backend.goto_target(
             head=goto_req.head_pose.to_pose_array() if goto_req.head_pose else None,
             antennas=np.array(goto_req.antennas) if goto_req.antennas else None,
+            body_yaw=goto_req.body_yaw,
             duration=goto_req.duration,
         )
     )
@@ -227,11 +230,16 @@ async def set_target(
     backend: Backend = Depends(get_backend),
 ) -> dict[str, str]:
     """POST route to set a single FullBodyTarget."""
+    if backend.is_move_running:
+        # Avoid fighting with the daemon while a trajectory is running
+        backend.logger.warning("Ignoring set_target request: move already running.")
+        return {"status": "ignored", "reason": "move_running"}
     backend.set_target(
         head=target.target_head_pose.to_pose_array()
         if target.target_head_pose
         else None,
         antennas=np.array(target.target_antennas) if target.target_antennas else None,
+        body_yaw=target.target_body_yaw,
     )
     return {"status": "ok"}
 
@@ -253,5 +261,25 @@ async def ws_set_target(
                 await websocket.send_text(
                     json.dumps({"status": "error", "detail": str(e)})
                 )
+    except WebSocketDisconnect:
+        pass
+
+
+@router.websocket("/ws/raw/write")
+async def write(
+    websocket: WebSocket,
+    backend: Backend = Depends(ws_get_backend),
+) -> None:
+    """WebSocket endpoint to stream raw packet to the serialport and return any response buffer.
+
+    Returns an empty bytes if no response is received.
+    """
+    await websocket.accept()
+
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            raw_response_packet: bytes = backend.write_raw_packet(data)
+            await websocket.send_bytes(raw_response_packet)
     except WebSocketDisconnect:
         pass

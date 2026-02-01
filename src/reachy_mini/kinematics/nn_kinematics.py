@@ -13,13 +13,13 @@ class NNKinematics:
     """Neural Network based FK/IK. Fitted from PlacoKinematics data."""
 
     def __init__(self, models_root_path: str):
-        """Intialize."""
+        """Initialize."""
         self.fk_model_path = f"{models_root_path}/fknetwork.onnx"
         self.ik_model_path = f"{models_root_path}/iknetwork.onnx"
         self.fk_infer = OnnxInfer(self.fk_model_path)
         self.ik_infer = OnnxInfer(self.ik_model_path)
 
-        self.start_body_yaw = 0.0  # No used, kept for compatibility
+        self.automatic_body_yaw = False  # Not used, kept for compatibility
 
     def ik(
         self,
@@ -58,6 +58,15 @@ class NNKinematics:
         pose[:3, 3] = [x, y, z]
         pose[:3, :3] = R.from_euler("xyz", [roll, pitch, yaw]).as_matrix()
         return pose
+
+    def set_automatic_body_yaw(self, automatic_body_yaw: bool) -> None:
+        """Set the automatic body yaw.
+
+        Args:
+            automatic_body_yaw (bool): Whether to enable automatic body yaw.
+
+        """
+        self.automatic_body_yaw = automatic_body_yaw
 
 
 class OnnxInfer:

@@ -53,7 +53,7 @@ class Matrix4x4Pose(BaseModel):
             float,
             float,
             float,
-        ] = tuple(arr.flatten().tolist())  # type: ignore [assignment]
+        ] = tuple(arr.flatten().tolist())
         return cls(m=m)
 
     def to_pose_array(self) -> NDArray[np.float64]:
@@ -114,6 +114,7 @@ class FullBodyTarget(BaseModel):
 
     target_head_pose: AnyPose | None = None
     target_antennas: tuple[float, float] | None = None
+    target_body_yaw: float | None = None
     timestamp: datetime | None = None
 
     model_config = {
@@ -129,10 +130,18 @@ class FullBodyTarget(BaseModel):
                         "yaw": 0.0,
                     },
                     "target_antennas": [0.0, 0.0],
+                    "target_body_yaw": 0.0,
                 }
             ]
         }
     }
+
+
+class DoAInfo(BaseModel):
+    """Direction of Arrival info from the microphone array."""
+
+    angle: float  # Angle in radians (0=left, π/2=front, π=right)
+    speech_detected: bool
 
 
 class FullState(BaseModel):
@@ -145,3 +154,4 @@ class FullState(BaseModel):
     antennas_position: list[float] | None = None
     timestamp: datetime | None = None
     passive_joints: list[float] | None = None
+    doa: DoAInfo | None = None

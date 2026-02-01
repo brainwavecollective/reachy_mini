@@ -7,6 +7,7 @@ It uses the `ReachyMiniMotorController` to communicate with the robot's motors.
 
 import json
 import logging
+import struct
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -16,7 +17,10 @@ from typing import Annotated, Any
 import log_throttling
 import numpy as np
 import numpy.typing as npt
+import zenoh
 from reachy_mini_motor_controller import ReachyMiniPyControlLoop
+
+from reachy_mini.utils.hardware_config.parser import parse_yaml_config
 
 from ..abstract import Backend, MotorControlMode
 
@@ -31,6 +35,9 @@ class RobotBackend(Backend):
         check_collision: bool = False,
         kinematics_engine: str = "AnalyticalKinematics",
         hardware_error_check_frequency: float = 1.0,
+        use_audio: bool = True,
+        wireless_version: bool = False,
+        hardware_config_filepath: str | None = None,
     ):
         """Initialize the RobotBackend.
 
@@ -40,12 +47,18 @@ class RobotBackend(Backend):
             check_collision (bool): If True, enable collision checking. Default is False.
             kinematics_engine (str): Kinematics engine to use. Defaults to "AnalyticalKinematics".
             hardware_error_check_frequency (float): Frequency in seconds to check for hardware errors. Default is 1.0.
+            use_audio (bool): If True, use audio. Default is True.
+            wireless_version (bool): If True, indicates that the wireless version of Reachy Mini is used. Default is False.
+            hardware_config_filepath (str | None): Path to the hardware configuration YAML file. Default is None.
 
         Tries to connect to the Reachy Mini motor controller and initializes the control loop.
 
         """
         super().__init__(
-            check_collision=check_collision, kinematics_engine=kinematics_engine
+            check_collision=check_collision,
+            kinematics_engine=kinematics_engine,
+            use_audio=use_audio,
+            wireless_version=wireless_version,
         )
 
         self.logger = logging.getLogger(__name__)
@@ -58,8 +71,20 @@ class RobotBackend(Backend):
                 seconds=1.0 / self.control_loop_frequency
             ),
             allowed_retries=5,
-            stats_pub_period=None,
+            stats_pub_period=timedelta(seconds=1.0),
         )
+
+        self.name2id = self.c.get_motor_name_id()
+        if hardware_config_filepath is not None:
+            config = parse_yaml_config(hardware_config_filepath)
+            for motor_name, motor_conf in config.motors.items():
+                if motor_conf.pid is not None:
+                    motor_id = self.name2id[motor_name]
+                    p, i, d = motor_conf.pid
+                    self.logger.info(
+                        f"Setting PID gains for motor '{motor_name}' (ID: {motor_id}): P={p}, I={i}, D={d}"
+                    )
+                    self.c.async_write_pid_gains(motor_id, p, i, d)
 
         self.motor_control_mode = self._infer_control_mode()
         self._torque_enabled = self.motor_control_mode != MotorControlMode.Disabled
@@ -84,7 +109,29 @@ class RobotBackend(Backend):
         self.target_antenna_joint_current = None  # Placeholder for antenna joint torque
         self.target_head_joint_current = None  # Placeholder for head joint torque
 
-        self.hardware_error_check_frequency = hardware_error_check_frequency  # seconds
+        if hardware_error_check_frequency <= 0:
+            raise ValueError(
+                "hardware_error_check_frequency must be positive and non-zero (Hz)."
+            )
+
+        self.hardware_error_check_period = (
+            1.0 / hardware_error_check_frequency
+        )  # seconds
+
+        # Initialize IMU for wireless version
+        if wireless_version:
+            try:
+                from bmi088 import BMI088
+
+                self.bmi088 = BMI088(i2c_bus=4)
+                self.logger.info("BMI088 IMU initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize IMU: {e}")
+                self.bmi088 = None
+        else:
+            self.bmi088 = None
+
+        self.imu_publisher: zenoh.Publisher | None = None
 
     def run(self) -> None:
         """Run the control loop for the robot backend.
@@ -210,12 +257,17 @@ class RobotBackend(Backend):
                         )
                     )
 
+                    # Publish IMU data if available
+                    if self.imu_publisher is not None and self.bmi088 is not None:
+                        imu_data = self.get_imu_data()
+                        if imu_data is not None:
+                            self.imu_publisher.put(json.dumps(imu_data))
+
                 self.last_alive = time.time()
 
                 self.ready.set()  # Mark the backend as ready
             except RuntimeError as e:
                 self._stats["nb_error"] += 1
-                # self.logger.warning(f"Error reading positions: {e}")
 
                 assert self.last_alive is not None
 
@@ -241,6 +293,9 @@ class RobotBackend(Backend):
                     self._status.control_loop_stats["nb_error"] = self._stats[
                         "nb_error"
                     ]
+                    self._status.control_loop_stats["motor_controller"] = str(
+                        self.c.get_stats()
+                    )
 
                 self._stats["timestamps"].clear()
                 self._stats["nb_error"] = 0
@@ -248,7 +303,7 @@ class RobotBackend(Backend):
 
             if (
                 time.time() - self.last_hardware_error_check_time
-                > self.hardware_error_check_frequency
+                > self.hardware_error_check_period
             ):
                 hardware_errors = self.read_hardware_errors()
                 if hardware_errors:
@@ -259,10 +314,11 @@ class RobotBackend(Backend):
                 self.last_hardware_error_check_time = time.time()
 
     def close(self) -> None:
-        """Close the motor controller connection."""
+        """Close the motor controller connection and release resources."""
         if self.c is not None:
             self.c.close()
         self.c = None
+        super().close()
 
     def get_status(self) -> "RobotBackendStatus":
         """Get the current status of the robot backend."""
@@ -355,7 +411,11 @@ class RobotBackend(Backend):
 
         """
         assert self.c is not None, "Motor controller not initialized or already closed."
-        assert mode in [0, 3, 5], (
+        assert mode in [
+            0,
+            3,
+            5,
+        ], (
             "Invalid operation mode. Must be one of [0 (torque), 3 (position), 5 (current-limiting position)]."
         )
 
@@ -413,6 +473,42 @@ class RobotBackend(Backend):
 
         """
         return np.array(self.get_all_joint_positions()[1])
+
+    def get_imu_data(self) -> dict[str, list[float] | float] | None:
+        """Get current IMU data (accelerometer, gyroscope, quaternion, temperature).
+
+        Returns:
+            dict with 'accelerometer', 'gyroscope', 'quaternion', and 'temperature' keys,
+            or None if IMU is not available.
+
+        """
+        if self.bmi088 is None:
+            return None
+
+        try:
+            # Read accelerometer (returns tuple of x, y, z in m/s^2)
+            accel_x, accel_y, accel_z = self.bmi088.read_accelerometer(m_per_s2=True)
+
+            # Read gyroscope (returns tuple of x, y, z in rad/s)
+            gyro_x, gyro_y, gyro_z = self.bmi088.read_gyroscope(deg_per_s=False)
+
+            # Get quaternion orientation (dt = control loop period)
+            dt = 1.0 / self.control_loop_frequency  # 0.02 seconds at 50Hz
+            quat = self.bmi088.get_quat(dt)
+
+            # Read temperature in Celsius
+            temperature = self.bmi088.read_temperature()
+
+            # Convert all numpy types to native Python floats for JSON serialization
+            return {
+                "accelerometer": [float(accel_x), float(accel_y), float(accel_z)],
+                "gyroscope": [float(gyro_x), float(gyro_y), float(gyro_z)],
+                "quaternion": [float(q) for q in quat],
+                "temperature": float(temperature),
+            }
+        except Exception as e:
+            self.logger.error(f"Error reading IMU data: {e}")
+            return None
 
     def compensate_head_gravity(self) -> None:
         """Calculate the currents necessary to compensate for gravity."""
@@ -480,6 +576,25 @@ class RobotBackend(Backend):
 
         self.motor_control_mode = mode
 
+    def set_motor_torque_ids(self, ids: list[str], on: bool) -> None:
+        """Set the torque state for specific motor names.
+
+        Args:
+            ids (list[int]): List of motor IDs to set the torque state for.
+            on (bool): True to enable torque, False to disable.
+
+        """
+        assert self.c is not None, "Motor controller not initialized or already closed."
+
+        assert ids is not None and len(ids) > 0, "IDs list cannot be empty or None."
+
+        ids_int = [self.name2id[name] for name in ids]
+
+        if on:
+            self.c.enable_torque_on_ids(ids_int)
+        else:
+            self.c.disable_torque_on_ids(ids_int)
+
     def _infer_control_mode(self) -> MotorControlMode:
         assert self.c is not None, "Motor controller not initialized or already closed."
 
@@ -512,6 +627,20 @@ class RobotBackend(Backend):
             err_bits = [i for i in range(8) if (err_byte & (1 << i)) != 0]
             return [bits_to_error[b] for b in err_bits if b in bits_to_error]
 
+        def voltage_ok(
+            id: int,
+            allowed_max_voltage: float = 7.8,
+        ) -> bool:
+            assert self.c is not None, (
+                "Motor controller not initialized or already closed."
+            )
+            # https://emanual.robotis.com/docs/en/dxl/x/xl330-m288/#present-input-voltage
+            resp_bytes = self.c.async_read_raw_bytes(id, 144, 2)
+            resp = struct.unpack("h", bytes(resp_bytes))[0]
+            voltage: float = resp / 10.0  # in Volts
+
+            return voltage <= allowed_max_voltage
+
         errors = {}
         for name, id in self.c.get_motor_name_id().items():
             # https://emanual.robotis.com/docs/en/dxl/x/xl330-m288/#hardware-error-status
@@ -519,9 +648,30 @@ class RobotBackend(Backend):
             assert len(err_byte) == 1
             err = decode_hardware_error_byte(err_byte[0])
             if err:
-                errors[name] = err
+                if "Input Voltage Error" in err:
+                    if voltage_ok(id):
+                        err.remove("Input Voltage Error")
+
+                # To avoid logging empty errors like "Motor 1: []"
+                if len(err) > 0:
+                    errors[name] = err
 
         return errors
+
+    def write_raw_packet(self, packet: bytes) -> bytes:
+        """Write a raw packet to the motor controller and return the response.
+
+        Args:
+            packet (bytes): The raw packet to send to the motor controller.
+
+        Returns:
+            bytes: The raw response packet from the motor controller.
+
+        """
+        assert self.c is not None, "Motor controller not initialized or already closed."
+
+        result: bytes = bytes(self.c.write_raw_packet(packet))
+        return result
 
 
 @dataclass

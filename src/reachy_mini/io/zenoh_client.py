@@ -5,6 +5,7 @@ robot. It subscribes to joint positions updates and allows sending commands to t
 """
 
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -23,49 +24,70 @@ from reachy_mini.io.protocol import AnyTaskRequest, TaskProgress, TaskRequest
 class ZenohClient(AbstractClient):
     """Zenoh client for Reachy Mini."""
 
-    def __init__(self, localhost_only: bool = True):
-        """Initialize the Zenoh client."""
+    def __init__(self, prefix: str, localhost_only: bool = True):
+        """Initialize the Zenoh client.
+
+        Args:
+            prefix: The Zenoh prefix to use for communication (used to identify multiple robots).
+            localhost_only: If True, connect to localhost only
+
+        """
+        self.prefix = prefix
+
         if localhost_only:
             c = zenoh.Config.from_json5(
                 json.dumps(
-                    {
-                        "connect": {
-                            "endpoints": {
-                                "peer": ["tcp/localhost:7447"],
-                                "router": [],
-                            },
-                        },
-                    }
+                    {"mode": "client", "connect": {"endpoints": ["tcp/localhost:7447"]}}
                 )
             )
         else:
-            c = zenoh.Config()
+            # Use peer mode with automatic discovery via multicast/gossip scouting
+            # This allows the client to discover robots on the network without knowing their IP/hostname
+            # The prefix/robot_name is used for topic namespacing only
+            c = zenoh.Config.from_json5(
+                json.dumps(
+                    {
+                        "mode": "peer",
+                        "scouting": {
+                            "multicast": {"enabled": True},
+                            "gossip": {"enabled": True},
+                        },
+                        "connect": {"endpoints": []},
+                    }
+                )
+            )
 
         self.joint_position_received = threading.Event()
         self.head_pose_received = threading.Event()
         self.status_received = threading.Event()
+        self.imu_data_received = threading.Event()
 
         self.session = zenoh.open(c)
-        self.cmd_pub = self.session.declare_publisher("reachy_mini/command")
+        self.cmd_pub = self.session.declare_publisher(f"{self.prefix}/command")
 
         self.joint_sub = self.session.declare_subscriber(
-            "reachy_mini/joint_positions",
+            f"{self.prefix}/joint_positions",
             self._handle_joint_positions,
         )
 
         self.pose_sub = self.session.declare_subscriber(
-            "reachy_mini/head_pose",
+            f"{self.prefix}/head_pose",
             self._handle_head_pose,
         )
 
         self.recording_sub = self.session.declare_subscriber(
-            "reachy_mini/recorded_data",
+            f"{self.prefix}/recorded_data",
             self._handle_recorded_data,
         )
 
         self.status_sub = self.session.declare_subscriber(
-            "reachy_mini/daemon_status",
+            f"{self.prefix}/daemon_status",
             self._handle_status,
+        )
+
+        self.imu_sub = self.session.declare_subscriber(
+            f"{self.prefix}/imu_data",
+            self._handle_imu_data,
         )
 
         self._last_head_joint_positions = None
@@ -77,11 +99,12 @@ class ZenohClient(AbstractClient):
         self._recorded_data_ready = threading.Event()
         self._is_alive = False
         self._last_status: Dict[str, Any] = {}  # contains a DaemonStatus
+        self._last_imu_data: Optional[Dict[str, List[float] | float]] = None
 
         self.tasks: dict[UUID, TaskState] = {}
-        self.task_request_pub = self.session.declare_publisher("reachy_mini/task")
+        self.task_request_pub = self.session.declare_publisher(f"{self.prefix}/task")
         self.task_progress_sub = self.session.declare_subscriber(
-            "reachy_mini/task_progress",
+            f"{self.prefix}/task_progress",
             self._handle_task_progress,
         )
 
@@ -104,7 +127,7 @@ class ZenohClient(AbstractClient):
                 raise TimeoutError(
                     "Timeout while waiting for connection with the server."
                 )
-            print("Waiting for connection with the server...")
+            logging.info("Waiting for connection with the server...")
 
         self._is_alive = True
         self._check_alive_evt = threading.Event()
@@ -163,6 +186,13 @@ class ZenohClient(AbstractClient):
             self._last_status = status
             self.status_received.set()
 
+    def _handle_imu_data(self, sample: zenoh.Sample) -> None:
+        """Handle incoming IMU data."""
+        if sample.payload:
+            imu_data = json.loads(sample.payload.to_string())
+            self._last_imu_data = imu_data
+            self.imu_data_received.set()
+
     def get_current_joints(self) -> tuple[list[float], list[float]]:
         """Get the current joint positions."""
         assert (
@@ -199,6 +229,18 @@ class ZenohClient(AbstractClient):
         self.status_received.clear()  # ready for next run
         return self._last_status
 
+    def get_current_imu_data(self) -> Optional[Dict[str, List[float] | float]]:
+        """Get the current IMU data.
+
+        Returns:
+            dict with 'accelerometer', 'gyroscope', 'quaternion', and 'temperature' keys,
+            or None if no data has been received yet or IMU is not available.
+
+        """
+        if self._last_imu_data is None:
+            return None
+        return self._last_imu_data.copy()
+
     def _handle_head_pose(self, sample: zenoh.Sample) -> None:
         """Handle incoming head pose."""
         if sample.payload:
@@ -209,7 +251,7 @@ class ZenohClient(AbstractClient):
     def get_current_head_pose(self) -> npt.NDArray[np.float64]:
         """Get the current head pose."""
         assert self._last_head_pose is not None, "No head pose received yet."
-        return self._last_head_pose.copy()
+        return self._last_head_pose.copy()  # type: ignore[no-any-return]
 
     def send_task_request(self, task_req: AnyTaskRequest) -> UUID:
         """Send a task request to the server."""

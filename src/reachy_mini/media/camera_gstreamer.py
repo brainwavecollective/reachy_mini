@@ -1,21 +1,62 @@
 """GStreamer camera backend.
 
 This module provides an implementation of the CameraBase class using GStreamer.
-By default the module directly returns JPEG images as output by the camera.
+It offers advanced video processing capabilities including hardware-accelerated
+decoding, image format conversion, and support for various camera models.
+
+The GStreamer camera backend features:
+- Hardware-accelerated video decoding
+- Support for multiple camera models (Reachy Mini Lite, Arducam, etc.)
+- Advanced image processing pipelines
+- Automatic camera detection and configuration
+- Multiple resolution and frame rate support
+- JPEG and raw image format support
+
+Example usage:
+    >>> from reachy_mini.media.camera_gstreamer import GStreamerCamera
+    >>> from reachy_mini.media.camera_constants import CameraResolution
+    >>>
+    >>> # Create GStreamer camera instance
+    >>> camera = GStreamerCamera(log_level="INFO")
+    >>>
+    >>> # Open the camera
+    >>> camera.open()
+    >>>
+    >>> # Set resolution (optional)
+    >>> camera.set_resolution(CameraResolution.R1280x720at30fps)
+    >>>
+    >>> # Capture frames
+    >>> frame = camera.read()
+    >>> if frame is not None:
+    ...     print(f"Captured frame with shape: {frame.shape}")
+    >>>
+    >>> # Get camera information
+    >>> width, height = camera.resolution
+    >>> fps = camera.framerate
+    >>> print(f"Camera: {width}x{height}@{fps}fps")
+    >>>
+    >>> # Clean up
+    >>> camera.close()
 """
 
+import os
 from threading import Thread
-from typing import Optional
+from typing import Optional, Tuple, cast
 
 import numpy as np
 import numpy.typing as npt
 
-from reachy_mini.media.camera_constants import CameraResolution
-
-from .camera_base import CameraBackend, CameraBase
+from reachy_mini.media.camera_constants import (
+    ArducamSpecs,
+    CameraResolution,
+    CameraSpecs,
+    ReachyMiniLiteCamSpecs,
+    ReachyMiniWirelessCamSpecs,
+)
 
 try:
     import gi
+
 except ImportError as e:
     raise ImportError(
         "The 'gi' module is required for GStreamerCamera but could not be imported. \
@@ -28,6 +69,8 @@ gi.require_version("GstApp", "1.0")
 
 from gi.repository import GLib, Gst, GstApp  # noqa: E402
 
+from .camera_base import CameraBase  # noqa: E402
+
 
 class GStreamerCamera(CameraBase):
     """Camera implementation using GStreamer."""
@@ -35,35 +78,64 @@ class GStreamerCamera(CameraBase):
     def __init__(
         self,
         log_level: str = "INFO",
-        resolution: CameraResolution = CameraResolution.R1280x720,
     ) -> None:
         """Initialize the GStreamer camera."""
-        super().__init__(
-            backend=CameraBackend.GSTREAMER, log_level=log_level, resolution=resolution
-        )
+        super().__init__(log_level=log_level)
         Gst.init(None)
         self._loop = GLib.MainLoop()
         self._thread_bus_calls: Optional[Thread] = None
 
         self.pipeline = Gst.Pipeline.new("camera_recorder")
 
+        cam_path, self.camera_specs = self.get_video_device()
+
+        if self.camera_specs is None:
+            raise RuntimeError("Camera specs not set")
+        self._resolution = self.camera_specs.default_resolution
+        self.resized_K = self.camera_specs.K
+
+        if self._resolution is None:
+            raise RuntimeError("Failed to get default camera resolution.")
+
         # note for some applications the jpeg image could be directly used
         self._appsink_video: GstApp = Gst.ElementFactory.make("appsink")
-        caps_video = Gst.Caps.from_string(
-            f"video/x-raw,format=BGR, width={self.resolution[0]},height={self.resolution[1]},framerate={self.framerate}/1"
-        )
-        self._appsink_video.set_property("caps", caps_video)
+        self.set_resolution(self._resolution)
         self._appsink_video.set_property("drop", True)  # avoid overflow
         self._appsink_video.set_property("max-buffers", 1)  # keep last image only
         self.pipeline.add(self._appsink_video)
 
-        cam_path = self.get_arducam_video_device()
         if cam_path == "":
             self.logger.warning("Recording pipeline set without camera.")
             self.pipeline.remove(self._appsink_video)
+        elif cam_path == "/tmp/reachymini_camera_socket":
+            camsrc = Gst.ElementFactory.make("unixfdsrc")
+            camsrc.set_property("socket-path", "/tmp/reachymini_camera_socket")
+            self.pipeline.add(camsrc)
+            queue = Gst.ElementFactory.make("queue")
+            self.pipeline.add(queue)
+            videoconvert = Gst.ElementFactory.make("v4l2convert")
+            self.pipeline.add(videoconvert)
+            camsrc.link(queue)
+            queue.link(videoconvert)
+            videoconvert.link(self._appsink_video)
+        elif cam_path == "imx708":
+            camsrc = Gst.ElementFactory.make("libcamerasrc")
+            self.pipeline.add(camsrc)
+            queue = Gst.ElementFactory.make("queue")
+            self.pipeline.add(queue)
+            videoconvert = Gst.ElementFactory.make("videoconvert")
+            self.pipeline.add(videoconvert)
+            camsrc.link(queue)
+            queue.link(videoconvert)
+            videoconvert.link(self._appsink_video)
         else:
             camsrc = Gst.ElementFactory.make("v4l2src")
             camsrc.set_property("device", cam_path)
+            # examples of camera controls settings:
+            # extra_controls_structure = Gst.Structure.new_empty("extra-controls")
+            # extra_controls_structure.set_value("saturation", 64)
+            # extra_controls_structure.set_value("brightness", 50)
+            # camsrc.set_property("extra-controls", extra_controls_structure)
             self.pipeline.add(camsrc)
             queue = Gst.ElementFactory.make("queue")
             self.pipeline.add(queue)
@@ -98,11 +170,33 @@ class GStreamerCamera(CameraBase):
         bus.remove_watch()
         self.logger.debug("bus message loop stopped")
 
+    def set_resolution(self, resolution: CameraResolution) -> None:
+        """Set the camera resolution."""
+        super().set_resolution(resolution)
+
+        # Check if pipeline is not playing before changing resolution
+        if self.pipeline.get_state(0).state == Gst.State.PLAYING:
+            raise RuntimeError(
+                "Cannot change resolution while the camera is streaming. Please close the camera first."
+            )
+
+        self._resolution = resolution
+        caps_video = Gst.Caps.from_string(
+            f"video/x-raw,format=BGR, width={self._resolution.value[0]},height={self._resolution.value[1]},framerate={self.framerate}/1"
+        )
+        self._appsink_video.set_property("caps", caps_video)
+
+    def _dump_latency(self) -> None:
+        query = Gst.Query.new_latency()
+        self.pipeline.query(query)
+        self.logger.info(f"Pipeline latency {query.parse_latency()}")
+
     def open(self) -> None:
         """Open the camera using GStreamer."""
         self.pipeline.set_state(Gst.State.PLAYING)
         self._thread_bus_calls = Thread(target=self._handle_bus_calls, daemon=True)
         self._thread_bus_calls.start()
+        GLib.timeout_add_seconds(5, self._dump_latency)
 
     def _get_sample(self, appsink: GstApp.AppSink) -> Optional[bytes]:
         sample = appsink.try_pull_sample(20_000_000)
@@ -138,25 +232,46 @@ class GStreamerCamera(CameraBase):
         self._loop.quit()
         self.pipeline.set_state(Gst.State.NULL)
 
-    def get_arducam_video_device(self) -> str:
-        """Use Gst.DeviceMonitor to find the unix camera path /dev/videoX of the Arducam_12MP webcam.
+    def get_video_device(self) -> Tuple[str, Optional[CameraSpecs]]:
+        """Use Gst.DeviceMonitor to find the unix camera path /dev/videoX.
 
         Returns the device path (e.g., '/dev/video2'), or '' if not found.
         """
+        if os.path.exists("/tmp/reachymini_camera_socket"):
+            camera_specs = cast(CameraSpecs, ReachyMiniWirelessCamSpecs)
+            self.logger.debug(
+                "Found wireless camera socket at /tmp/reachymini_camera_socket"
+            )
+            return "/tmp/reachymini_camera_socket", camera_specs
+
         monitor = Gst.DeviceMonitor()
         monitor.add_filter("Video/Source")
         monitor.start()
 
+        cam_names = ["Reachy", "Arducam_12MP", "imx708"]
+
         devices = monitor.get_devices()
-        for device in devices:
-            name = device.get_display_name()
-            device_props = device.get_properties()
-            if name and "Arducam_12MP" in name:
-                if device_props and device_props.has_field("api.v4l2.path"):
-                    device_path = device_props.get_string("api.v4l2.path")
-                    self.logger.debug(f"Found Arducam_12MP at {device_path}")
-                    monitor.stop()
-                    return str(device_path)
+        for cam_name in cam_names:
+            for device in devices:
+                name = device.get_display_name()
+                device_props = device.get_properties()
+
+                if cam_name in name:
+                    if device_props and device_props.has_field("api.v4l2.path"):
+                        device_path = device_props.get_string("api.v4l2.path")
+                        camera_specs = (
+                            cast(CameraSpecs, ArducamSpecs)
+                            if cam_name == "Arducam_12MP"
+                            else cast(CameraSpecs, ReachyMiniLiteCamSpecs)
+                        )
+                        self.logger.debug(f"Found {cam_name} camera at {device_path}")
+                        monitor.stop()
+                        return str(device_path), camera_specs
+                    elif cam_name == "imx708":
+                        camera_specs = cast(CameraSpecs, ReachyMiniWirelessCamSpecs)
+                        self.logger.debug(f"Found {cam_name} camera")
+                        monitor.stop()
+                        return cam_name, camera_specs
         monitor.stop()
-        self.logger.warning("Arducam_12MP webcam not found.")
-        return ""
+        self.logger.warning("No camera found.")
+        return "", None
