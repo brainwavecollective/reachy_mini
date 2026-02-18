@@ -127,3 +127,8 @@ python_version = "3.10"
 files = ["src/", "examples/"]
 ignore_missing_imports = true
 strict = true
+
+[dependency-groups]
+dev = [
+    "build>=1.4.0",
+]

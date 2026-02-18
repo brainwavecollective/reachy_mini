@@ -251,6 +251,22 @@ wheels = [
 ]
 
 [[package]]
+name = "build"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "os_name == 'nt'" },
+    { name = "importlib-metadata", marker = "python_full_version < '3.10.2'" },
+    { name = "packaging" },
+    { name = "pyproject-hooks" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/18/94eaffda7b329535d91f00fe605ab1f1e5cd68b2074d03f255c7d250687d/build-1.4.0.tar.gz", hash = "sha256:f1b91b925aa322be454f8330c6fb48b465da993d1e7e7e6fa35027ec49f3c936", size = 50054, upload-time = "2026-01-08T16:41:47.696Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/0d/84a4380f930db0010168e0aa7b7a8fed9ba1835a8fbb1472bc6d0201d529/build-1.4.0-py3-none-any.whl", hash = "sha256:6a07c1b8eb6f2b311b96fcbdbce5dab5fe637ffda0fd83c9cac622e927501596", size = 24141, upload-time = "2026-01-08T16:41:46.453Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1174,7 +1190,7 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.3.0"
+version = "1.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -1188,9 +1204,9 @@ dependencies = [
     { name = "typer-slim" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/c9/d42b5cfa0a50b77cf9165e13edfaf2e3bd4e0def9cb67b6b8a07224a52ab/huggingface_hub-1.3.0.tar.gz", hash = "sha256:289e2a3586fdf01e35882944eaa06fbd57436de24b6e653d1fab248584acd66b", size = 622092, upload-time = "2026-01-09T09:54:44.663Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/fc/eb9bc06130e8bbda6a616e1b80a7aa127681c448d6b49806f61db2670b61/huggingface_hub-1.4.1.tar.gz", hash = "sha256:b41131ec35e631e7383ab26d6146b8d8972abc8b6309b963b306fbcca87f5ed5", size = 642156, upload-time = "2026-02-06T09:20:03.013Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/5b/c5fde1f56b1f072b3028ec5413f3f5bf472c5891ebb34589cddb1689609f/huggingface_hub-1.3.0-py3-none-any.whl", hash = "sha256:763f450169bb05ea3867990e9d3ba9464eb617b874791301dc81be2c6ffb0bf5", size = 533092, upload-time = "2026-01-09T09:54:43.228Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/ae/2f6d96b4e6c5478d87d606a1934b5d436c4a2bce6bb7c6fdece891c128e3/huggingface_hub-1.4.1-py3-none-any.whl", hash = "sha256:9931d075fb7a79af5abc487106414ec5fba2c0ae86104c0c62fd6cae38873d18", size = 553326, upload-time = "2026-02-06T09:20:00.728Z" },
 ]
 
 [[package]]
@@ -1221,6 +1237,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6f/6d/0703ccc57f3a7233505399edb88de3cbd678da106337b9fcde432b65ed60/idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902", size = 194582, upload-time = "2025-10-12T14:55:20.501Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea", size = 71008, upload-time = "2025-10-12T14:55:18.883Z" },
+]
+
+[[package]]
+name = "importlib-metadata"
+version = "8.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "zipp", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/5e/f8e9a1d23b9c20a551a8a02ea3637b4642e22c2626e3a13a9a29cdea99eb/importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151", size = 27865, upload-time = "2025-12-21T10:00:18.329Z" },
 ]
 
 [[package]]
@@ -2956,6 +2984,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyproject-hooks"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/82/28175b2414effca1cdac8dc99f76d660e7a4fb0ceefa4b4ab8f5f6742925/pyproject_hooks-1.2.0.tar.gz", hash = "sha256:1e859bd5c40fae9448642dd871adf459e5e2084186e8d2c2a79a824c970da1f8", size = 19228, upload-time = "2024-09-29T09:24:13.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl", hash = "sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913", size = 10216, upload-time = "2024-09-29T09:24:11.978Z" },
+]
+
+[[package]]
 name = "pyreadline3"
 version = "3.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3180,8 +3217,8 @@ wheels = [
 ]
 
 [[package]]
-name = "reachy-mini"
-version = "1.3.1"
+name = "reachy-mini-bwc"
+version = "1.3.1.post1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -3275,6 +3312,11 @@ wireless-version = [
     { name = "semver" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "build" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiohttp" },
@@ -3283,7 +3325,7 @@ requires-dist = [
     { name = "eclipse-zenoh", specifier = "~=1.7.0" },
     { name = "fastapi" },
     { name = "gpiozero", marker = "sys_platform == 'linux' and extra == 'wireless-version'", specifier = ">=2.0.0" },
-    { name = "huggingface-hub", specifier = "==1.3.0" },
+    { name = "huggingface-hub", specifier = ">=1.4.0" },
     { name = "jinja2" },
     { name = "lgpio", marker = "sys_platform == 'linux' and extra == 'wireless-version'", specifier = ">=0.2.2.0" },
     { name = "libusb-package", specifier = ">=1.0.26.3" },
@@ -3308,14 +3350,14 @@ requires-dist = [
     { name = "pyusb", specifier = ">=1.2.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "questionary" },
-    { name = "reachy-mini", extras = ["dev"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["examples"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["gstreamer"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["mujoco"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["nn-kinematics"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["placo-kinematics"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["rerun"], marker = "extra == 'all'" },
-    { name = "reachy-mini", extras = ["wireless-version"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["dev"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["examples"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["gstreamer"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["mujoco"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["nn-kinematics"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["placo-kinematics"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["rerun"], marker = "extra == 'all'" },
+    { name = "reachy-mini-bwc", extras = ["wireless-version"], marker = "extra == 'all'" },
     { name = "reachy-mini-motor-controller", specifier = ">=1.5.3" },
     { name = "reachy-mini-rust-kinematics", specifier = ">=1.0.3" },
     { name = "requests", specifier = ">=2.28.0" },
@@ -3335,6 +3377,9 @@ requires-dist = [
     { name = "websockets", specifier = ">=12,<16" },
 ]
 provides-extras = ["dev", "examples", "mujoco", "nn-kinematics", "placo-kinematics", "gstreamer", "rerun", "wireless-version", "all"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "build", specifier = ">=1.4.0" }]
 
 [[package]]
 name = "reachy-mini-motor-controller"
