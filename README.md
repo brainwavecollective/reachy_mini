@@ -1,55 +1,14 @@
-# ⚠️ reachy-mini-bwc — Brain Wave Collective Maintained Fork
+# ⚠️ Notice: This is a Brain Wave Collective Maintained Fork
 
-> **Important:** This package (`reachy-mini-bwc`) is a maintained fork of the official `reachy-mini` SDK developed by **Pollen Robotics**.
->
-> Official upstream project:
-> https://github.com/pollen-robotics/reachy_mini
->
-> If you are not using Brain Wave Collective software or Anima integrations, you most likely want the official package and NOT this repo:
->
-> ```
-> pip install reachy-mini
-> ```
+This repository is a **fork** of the original upstream project.
 
-## Why does this fork exist?
+It exists to maintain compatibility with Brain Wave Collective systems and may include dependency or version adjustments that differ from upstream.
 
-`reachy-mini-bwc` exists to provide a version of the Reachy Mini SDK that is:
+If you are not using Brain Wave Collective software, you likely want the official upstream project instead.
 
-- Compatible with **Anima**
-- Compatible with **Anima Reachy Conversation**
-- Compatible with other Brain Wave Collective integrations
-- Released independently when upstream dependency constraints conflict with BWC systems
-
-This fork applies **minimal changes** to upstream `reachy-mini`, primarily limited to:
-
-- Dependency resolution adjustments
-- Version coordination with BWC ecosystem components
-
-We do not modify core robot functionality unless explicitly documented.
-
-## Version Mapping
-
-| reachy-mini-bwc | Upstream reachy-mini | Notes |
-|-----------------|----------------------|-------|
-| 1.3.1.post1     | 1.3.1                | Dependency adjustments for Anima compatibility |
-
-Future releases will document their upstream base version in this table.
-
-
-## Attribution
-
-Original SDK:
-- © Pollen Robotics
-- https://github.com/pollen-robotics/reachy_mini
-
-This fork:
-- Maintained by Brain Wave Collective
-- https://brainwavecollective.ai
-
-All original licensing from upstream is preserved.
+All original licensing and attribution are preserved.
 
 ---
-
 # Reachy Mini 🤖
 
 [![Ask on HuggingChat](https://img.shields.io/badge/Read_the-Documentation-yellow?logo=huggingface&logoColor=yellow)](https://huggingface.co/docs/reachy_mini/)
