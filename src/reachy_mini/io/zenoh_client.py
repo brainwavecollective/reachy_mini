@@ -167,7 +167,7 @@ class ZenohClient(AbstractClient):
             val = self._last_ik_failed
             self._last_ik_failed = False
             if val:
-                logging.info(f"DEBUG get_ik_failed returning True")
+                logging.debug(f"DEBUG get_ik_failed returning True")
             return val
         
     def _handle_joint_positions(self, sample: zenoh.Sample) -> None:
@@ -177,7 +177,7 @@ class ZenohClient(AbstractClient):
             self._last_antennas_joint_positions = positions.get("antennas_joint_positions")
             incoming = positions.get("ik_failed", False)
             if incoming:
-                logging.info("DEBUG zenoh_client received ik_failed=True")
+                logging.debug("DEBUG zenoh_client received ik_failed=True")
                 with self._ik_failed_lock:
                     self._last_ik_failed = True
             self.joint_position_received.set()
