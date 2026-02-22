@@ -60,6 +60,8 @@ class RobotBackend(Backend):
             use_audio=use_audio,
             wireless_version=wireless_version,
         )
+        
+        self._last_ik_failed = False
 
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(log_level)
@@ -236,19 +238,23 @@ class RobotBackend(Backend):
                             self.target_head_pose, self.target_body_yaw
                         )
                     except ValueError as e:
+                        self._last_ik_failed = True
                         log_throttling.by_time(self.logger, interval=0.5).warning(
                             f"IK error: {e}"
                         )
 
                 if not self.is_shutting_down:
+                    self.logger.debug(f"DEBUG publishing ik_failed={self._last_ik_failed}")
                     self.joint_positions_publisher.put(
                         json.dumps(
                             {
                                 "head_joint_positions": head_positions,
                                 "antennas_joint_positions": antenna_positions,
+                                "ik_failed": self._last_ik_failed,
                             }
                         )
                     )
+                    self._last_ik_failed = False
                     self.pose_publisher.put(
                         json.dumps(
                             {

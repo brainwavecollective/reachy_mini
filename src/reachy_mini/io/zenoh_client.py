@@ -107,6 +107,9 @@ class ZenohClient(AbstractClient):
             f"{self.prefix}/task_progress",
             self._handle_task_progress,
         )
+        
+        self._last_ik_failed: bool = False
+        self._ik_failed_lock = threading.Lock()
 
     def wait_for_connection(self, timeout: float = 5.0) -> None:
         """Wait for the client to connect to the server.
@@ -159,14 +162,24 @@ class ZenohClient(AbstractClient):
 
         self.cmd_pub.put(command.encode("utf-8"))
 
+    def get_ik_failed(self) -> bool:
+        with self._ik_failed_lock:
+            val = self._last_ik_failed
+            self._last_ik_failed = False
+            if val:
+                logging.info(f"DEBUG get_ik_failed returning True")
+            return val
+        
     def _handle_joint_positions(self, sample: zenoh.Sample) -> None:
-        """Handle incoming joint positions."""
         if sample.payload:
             positions = json.loads(sample.payload.to_string())
             self._last_head_joint_positions = positions.get("head_joint_positions")
-            self._last_antennas_joint_positions = positions.get(
-                "antennas_joint_positions"
-            )
+            self._last_antennas_joint_positions = positions.get("antennas_joint_positions")
+            incoming = positions.get("ik_failed", False)
+            if incoming:
+                logging.info("DEBUG zenoh_client received ik_failed=True")
+                with self._ik_failed_lock:
+                    self._last_ik_failed = True
             self.joint_position_received.set()
 
     def _handle_recorded_data(self, sample: zenoh.Sample) -> None:
